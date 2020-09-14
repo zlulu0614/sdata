@@ -1,0 +1,219 @@
+########数据生成#######
+simdata<-simjm(n = 10000,fptime=10)
+####保存数据
+#write.csv(simdata,file="F:/JM/simdata.csv",row.names=TRUE)
+#读取数据
+#simdata<-read.csv(file="F:/JM/simdata.csv",row.names=1)
+#改变类型
+simdata$id <- as.character(simdata$id)
+simdata$event <-factor(simdata$event,levels=c("1","2","0"),labels=c(1,2,0))
+simdata$X1 <-factor(simdata$X1,levels=c("1","0"),labels=c(1,0))
+#生存数据
+simdata.id<-simdata[which(simdata$tj==0),]
+#查看结局比例
+table(simdata.id$event)
+
+###不同竞争比例下的模拟数据集#####
+simdata.id <- simdata.id[order(simdata.id$event),] #生存数据按结局1，2，0排序
+library(sampling) #载入分层抽样的包sampling
+#p<-0.8 #生成目标结局抽样比例  
+#p1<-c(0.9,0.7,0.5,0.3)
+#设定每个样本集大小为500 1000
+a1<-c(360,280,200,120,720,560,400,240) #目标结局
+a2<-c(40,120,200,280,80,240,400,560)  #竞争结局
+a0<-c(100,100,100,100,200,200,200,200) #删失结局
+#定义抽样函数 
+select<-function(n,a1,a2,a0){
+  id=strata(simdata.id,stratanames=c("event"),size=c(a1,a2,a0), method="srswor")
+  simdata.id=getdata(simdata.id,id)
+  #id1<-id$ID_unit
+  s1=NULL
+  s1_1=simdata[which(simdata$id==simdata.id[1,1]),] # 
+  s1_2=simdata[which(simdata$id==simdata.id[2,1]),] #
+  s11=rbind(s1_1,s1_2)
+  for (i in 1:n) {
+    s1=rbind(s1,s11) #
+    s11=simdata[which(simdata$id==simdata.id[i+2,1]),] # 
+    i=i+1 #
+  }
+  simdata1<-s1
+}
+###抽样###
+#500样本量下
+set.seed(500)
+simdata1_11<-select(500,a1[1],a2[1],a0[1]) #纵向数据
+simdata.id1_11<-simdata1_11[which(simdata1_11$tj==0),] #生存数据
+table(simdata.id1_11$event) #查看结局变量
+simdata1_12<-select(500,a1[2],a2[2],a0[2])
+simdata.id1_12<-simdata1_12[which(simdata1_12$tj==0),]
+table(simdata.id1_12$event)
+simdata1_13<-select(500,a1[3],a2[3],a0[3])
+simdata.id1_13<-simdata1_13[which(simdata1_13$tj==0),]
+table(simdata.id1_13$event)
+simdata1_14<-select(500,a1[4],a2[4],a0[4])
+simdata.id1_14<-simdata1_14[which(simdata1_14$tj==0),]
+table(simdata.id1_14$event)
+#1000样本量下
+set.seed(1000)
+simdata2_11<-select(1000,a1[5],a2[5],a0[5])
+simdata.id2_11<-simdata2_11[which(simdata2_11$tj==0),]
+table(simdata.id2_11$event)
+simdata2_12<-select(1000,a1[6],a2[6],a0[6])
+simdata.id2_12<-simdata2_12[which(simdata2_12$tj==0),]
+table(simdata.id2_12$event)
+simdata2_13<-select(1000,a1[7],a2[7],a0[7])
+simdata.id2_13<-simdata2_13[which(simdata2_13$tj==0),]
+table(simdata.id2_13$event)
+simdata2_14<-select(1000,a1[8],a2[8],a0[8])
+simdata.id2_14<-simdata2_14[which(simdata2_14$tj==0),]
+table(simdata.id2_14$event)
+
+####模型分析###
+#基于对目标结局
+##############
+fit<- survfit(Surv(time,event) ~1, data=simdata.id)
+print(fit) #查看目标结局的平均生存时间
+
+###原因别竞争风险模型
+cox1_11<-coxph(Surv(time,event==1)~ X1+X2+Yij,data=simdata.id1_11,x = TRUE) #原因别
+cox1_12<-coxph(Surv(time,event==1)~ X1+X2+Yij,data=simdata.id1_12,x = TRUE) #原因别
+cox1_13<-coxph(Surv(time,event==1)~ X1+X2+Yij,data=simdata.id1_13,x = TRUE) #原因别
+cox1_14<-coxph(Surv(time,event==1)~ X1+X2+Yij,data=simdata.id1_14,x = TRUE) #原因别
+cox2_11<-coxph(Surv(time,event==1)~ X1+X2+Yij,data=simdata.id2_11,x = TRUE) #原因别
+cox2_12<-coxph(Surv(time,event==1)~ X1+X2+Yij,data=simdata.id2_12,x = TRUE) #原因别
+cox2_13<-coxph(Surv(time,event==1)~ X1+X2+Yij,data=simdata.id2_13,x = TRUE) #原因别
+cox2_14<-coxph(Surv(time,event==1)~ X1+X2+Yij,data=simdata.id2_14,x = TRUE) #原因别
+
+#输出
+cox<-function(cox){
+  cox<-cox1_11
+  CIlow<-signif(confint(cox)[,1],digits=3)
+  CIupp<-signif(confint(cox)[,2],digits=3)
+  #pvalue<-signif(summary(tdcox)$coef[, 6],digits=3)
+  coef<-signif(summary(cox)$coef[, c("coef")],digits=4)
+  secoef<-signif(summary(cox)$coef[, c("se(coef)")],digits=3)
+  ci<-paste("(", CIlow, ",", CIupp, ")")
+  #coef<-paste0(coef, " (",secoef, ")")
+  width<-CIupp-CIlow
+  out <- rbind.data.frame(coef,secoef,ci,width)
+  names(out)<-c("gamma1 (95% CI)","gamma2 (95% CI)","assoct (95% CI)")
+  out
+}
+coxoutput<-rbind(cox(cox1_11),cox(cox1_12),cox(cox1_13),cox(cox1_14),
+                   cox(cox2_11),cox(cox2_12),
+                   cox(cox2_13),cox(cox2_14))
+write.csv(coxoutput,file="F:/JM/cox.csv",row.names=TRUE) 
+
+###joint####
+
+#cox生存子模型
+csh1_11<-coxph(Surv(time,event==1)~ X1+X2,data=simdata.id1_11,x = TRUE) #原因别
+csh1_12<-coxph(Surv(time,event==1)~ X1+X2,data=simdata.id1_12,x = TRUE) #原因别
+csh1_13<-coxph(Surv(time,event==1)~ X1+X2,data=simdata.id1_13,x = TRUE) #原因别
+csh1_14<-coxph(Surv(time,event==1)~ X1+X2,data=simdata.id1_14,x = TRUE) #原因别
+csh2_11<-coxph(Surv(time,event==1)~ X1+X2,data=simdata.id2_11,x = TRUE) #原因别
+csh2_12<-coxph(Surv(time,event==1)~ X1+X2,data=simdata.id2_12,x = TRUE) #原因别
+csh2_13<-coxph(Surv(time,event==1)~ X1+X2,data=simdata.id2_13,x = TRUE) #原因别
+csh2_14<-coxph(Surv(time,event==1)~ X1+X2,data=simdata.id2_14,x = TRUE) #原因别
+#lme纵向子模型
+lme1_11 <-lme(Yij ~ X1 + X2 + tj, random = ~ 1+tj |id, data = simdata1_11,method="ML")
+lme1_12 <-lme(Yij ~ X1 + X2 + tj, random = ~ 1+tj |id, data = simdata1_12,method="ML")
+lme1_13 <-lme(Yij ~ X1 + X2 + tj, random = ~ 1+tj |id, data = simdata1_13,method="ML")
+lme1_14 <-lme(Yij ~ X1 + X2 + tj, random = ~ 1+tj |id, data = simdata1_14,method="ML")
+lme2_11 <-lme(Yij ~ X1 + X2 + tj, random = ~ 1+tj |id, data = simdata2_11,method="ML")
+lme2_12 <-lme(Yij ~ X1 + X2 + tj, random = ~ 1+tj |id, data = simdata2_12,method="ML")
+lme2_13 <-lme(Yij ~ X1 + X2 + tj, random = ~ 1+tj |id, data = simdata2_13,method="ML")
+lme2_14 <-lme(Yij ~ X1 + X2 + tj, random = ~ 1+tj |id, data = simdata2_14,method="ML")
+
+#joint model联合模型
+joint1_11<- jointModel(lme1_11, csh1_11, timeVar = "tj", method = "weibull-PH-GH")
+joint1_12<- jointModel(lme1_12, csh1_12, timeVar = "tj", method = "weibull-PH-GH")
+joint1_13<- jointModel(lme1_13, csh1_13, timeVar = "tj", method = "weibull-PH-GH")
+joint1_14<- jointModel(lme1_14, csh1_14, timeVar = "tj", method = "weibull-PH-GH")
+
+joint2_11<- jointModel(lme2_11, csh2_11, timeVar = "tj", method = "weibull-PH-GH")
+joint2_12<- jointModel(lme2_12, csh2_12, timeVar = "tj", method = "weibull-PH-GH")
+joint2_13<- jointModel(lme2_13, csh2_13, timeVar = "tj", method = "weibull-PH-GH")
+joint2_14<- jointModel(lme2_14, csh2_14, timeVar = "tj", method = "weibull-PH-GH")
+
+#定义联合模型输出形式
+jm.summary <- function(model.in) {
+  sigma <- signif(c(model.in$coefficients$sigma,NA),digits=3)
+  Sigma11 <- signif(c(model.in$coefficients$D[1, 1],NA),digits=3)
+  Sigma22 <- signif(c(model.in$coefficients$D[2, 2], NA),digits=3)
+  Sigma12 <- signif(c(model.in$coefficients$D[2, 1], NA),digits=3) 
+  coef <- confint(model.in)
+  coef <- signif(t(coef),digits=3)
+  se1<-t(coef(summary(model.in))$Longitudinal[,2])
+  se2<-t(coef(summary(model.in))$Event[1:4,2])
+  se<-signif(cbind(se1,se2),digits=3) 
+  ci <- paste("(", paste(coef[1, ], coef[3, ], sep = ", "), ")", sep = "")
+  coef<- rbind(coef[2,], ci)
+  coef[1,]<-paste0(coef[1,], "(",se,")")
+  coef <- cbind(coef, sigma, Sigma11, Sigma22, Sigma12)
+}
+
+jointoutput<-rbind(jm.summary(joint1_11),jm.summary(joint1_12),
+                   jm.summary(joint1_13),jm.summary(joint1_14),
+                   jm.summary(joint2_11),jm.summary(joint2_12),
+                   jm.summary(joint2_13),jm.summary(joint2_14))
+write.csv(jointoutput,file="F:/JM/joint.csv",row.names=TRUE) 
+
+###TVCM时协cox模型
+tdcox1_11 <- coxph(Surv(start, stop, eventtd==1) ~ X1+X2+ Yij+cluster(id), data = simdata1_11)
+summary(tdcox1_11)
+tdcox1_12 <- coxph(Surv(start, stop, eventtd==1) ~ X1+X2+ Yij+cluster(id), data = simdata1_12)
+summary(tdcox1_12)
+tdcox1_13 <- coxph(Surv(start, stop, eventtd==1) ~ X1+X2+ Yij+cluster(id), data = simdata1_13)
+summary(tdcox1_13)
+tdcox1_14 <- coxph(Surv(start, stop, eventtd==1) ~ X1+X2+ Yij+cluster(id), data = simdata1_14)
+summary(tdcox1_14)
+tdcox2_11 <- coxph(Surv(start, stop, eventtd==1) ~ X1+X2+ Yij+cluster(id), data = simdata2_11)
+summary(tdcox2_11)
+tdcox2_12 <- coxph(Surv(start, stop, eventtd==1) ~ X1+X2+ Yij+cluster(id), data = simdata2_12)
+summary(tdcox2_12)
+tdcox2_13 <- coxph(Surv(start, stop, eventtd==1) ~ X1+X2+ Yij+cluster(id), data = simdata2_13)
+summary(tdcox2_13)
+tdcox2_14 <- coxph(Surv(start, stop, eventtd==1) ~ X1+X2+ Yij+cluster(id), data = simdata2_14)
+summary(tdcox2_14)
+
+#定义TVCM结果输出形式####
+tdcox<-function(tdcox){
+  CIlow<-signif(confint(tdcox)[,1],digits=3)
+  CIupp<-signif(confint(tdcox)[,2],digits=3)
+  #pvalue<-signif(summary(tdcox)$coef[, 6],digits=3)
+  coef<-signif(summary(tdcox)$coef[, c("coef")],digits=4)
+  secoef<-signif(summary(tdcox)$coef[, c("se(coef)")],digits=3)
+  ci<-paste("(", CIlow, ",", CIupp, ")")
+  coef<-paste0(coef, " (",secoef, ")")
+  out <- rbind.data.frame(coef,ci)
+  names(out)<-c("gamma1 (95% CI)","gamma2 (95% CI)","assoct (95% CI)")
+  out
+}
+tdcoxoutput<-rbind(tdcox(tdcox1_11),tdcox(tdcox1_12),tdcox(tdcox1_13),tdcox(tdcox1_14),
+                   tdcox(tdcox2_11),tdcox(tdcox2_12),
+                   tdcox(tdcox2_13),tdcox(tdcox2_14))
+write.csv(tdcoxoutput,file="F:/JM/tdcox.csv",row.names=TRUE) 
+
+###生存函数在不同模型下的差异
+###原因别模型###
+simdata.id1=simdata.id
+simdata.id1$event[simdata.id1$event==2]=0
+csh.risk1<-cuminc(simdata.id1$time,simdata.id1$event,cencode=0)
+plot(csh.risk1,ylim=c(0,1),xlim=c(0,10),plot=FALSE,color=2,lwd=1.5,lty=1,xlab="生存时间（年）",ylab="累积发生率")
+par(new=TRUE)
+simdata.id2=simdata.id
+simdata.id2$event[simdata.id$event==1]=0
+simdata.id2$event[simdata.id$event==2]=1
+csh.risk2<-cuminc(simdata.id2$time,simdata.id2$event,cencode=0)
+plot(csh.risk2, ylim=c(0, 1),xlim=c(0,10),plot=FALSE,
+     lty=1,col="blue",lwd=1.5,xlab="生存时间（年）",ylab="累积发生率",main="原因别竞争风险模型下结局累积发生率",cex.main=1,font.main=1)
+legend("topleft",legend=c("目标结局","竞争结局"),inset=0.01,
+       lty=c(1,1),col=c("red","blue"),text.width=0.8,text.font=6,x.intersp=1,y.intersp=0.6,bty="n",lwd=1.5,seg.len=0.7)
+####部分分布模型####
+library(cmprsk)
+sdh.risk<-cuminc(ftime=simdata.id$time,fstatus=simdata.id$event,cencode=0)
+plot(sdh.risk, ylim=c(0, 0.8),xlim=c(0,10),plot=FALSE,
+     lty=c(1,1),col=c("red","blue"),lwd=1.5,main="部分分布竞争风险模型下结局累积发生率",cex.main=1,font.main=1,xlab="生存时间（年）",ylab="累积发生率")
+legend("topleft",legend=c("目标结局","竞争结局"),inset=0.01,
+       lty=c(1,1),col=c("red","blue"),text.width=0.8,text.font=6,x.intersp=1,y.intersp=0.6,bty="n",lwd=1.5,seg.len=0.7)
