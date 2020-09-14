@@ -1,0 +1,139 @@
+###############模拟数据的生成#################
+###参考 page(survtd::simjm)以及 simsurv
+#############################################
+
+###调用程序包###
+library(lava)
+library(stats)
+library(cmprsk)
+library(nlme)
+library(JM)
+###假设####
+#假设1 竞争事件为随机删失事件 与 目标事件之间不存在转移概率 且协变量对竞争结局无影响
+#即为经典竞争事件
+#假设2 只存在对一种指标的纵向测量
+#假设3 测量过程中只存在右删失 无测量结果删失
+
+#模拟单个连续时间依赖标记和时间到事件的联合模型的数据
+#用两个时间固定的协变量(X1和X2)和一个时间依赖的协变量(Yij)模拟Cox比例风险模型的数据
+####函数#######
+simjm<-function (n,fptime) {
+  set.seed(1111)
+  #参数指定 
+  # 纵向测量次数 J 间隔时间 Step
+  J <- fptime
+  Step <- 1
+  tj <- rep(seq(0, J-1, Step), n) #测量来访的时间安排
+  Jt <- length(seq(0, J-1 , Step))
+  # 固定协变量 X1（二分类）X2 （连续）
+  id <- rep(1:n, each = Jt) 　#来自同一个人的观察的唯一标识符
+  p_X1 <- 0.5 
+  mean_X2 <- 0
+  sd_X2 <- 1
+  X1U <- rbinom(n, 1, p_X1) #X1值
+  X1 <- rep(X1U, each = Jt) #X1重复
+  X2U <- rnorm(n, mean_X2, sd_X2) #X2值
+  X2 <- rep(X2U, each = Jt) #X2 重复
+  ##Cox
+  delta <- 2  #威布尔分布的形状参数γ
+  gamma_0<- -7.5
+  gamma_11 <- 0.5 #γX1
+  gamma_12 <- -0.5 #γX2
+  gamma_21 <- -0.5 #γX1
+  gamma_22 <- 0.5 #γX2
+  alpha<-0.5
+  #产生纵向测量的随机效应
+  beta_0 <- 10 #固定截距
+  beta_1<- -1  #X1对Y1的回归系数
+  beta_2<- 1  #X2对Y1的回归系数
+  beta_t<-　-0.25 #测量时间对Y1的回归系数
+  sdrandI<- 1.5  #Y1的随机截距标准差（默认）
+  sdrandS<- 0.05   #Y1 的随即斜率标准差（默认）  
+  # #随机效应部分
+  sderror <- 0.3  #测量误差的标准差
+  b_corrmat <- matrix(c(1, 0.2, 0.2, 1), 2, 2) #随机效应相关矩阵
+  b_sds     <- c(sdrandI, sdrandS #标准差
+  b_means   <- rep(0, 2) #均值
+  b_z       <- MASS::mvrnorm(n = n, mu = b_means, Sigma = b_corrmat) #多元正态分布
+  b         <- sapply(1:length(b_sds), FUN = function(x) b_sds[x] * b_z[,x])
+  b0iU <- b[,1] #Y1的随机截距
+  b1iU <- b[,2]#Y1的随机斜率
+  b0i <- rep(b0iU, each = Jt)　#重复测量的Y1的随机斜率
+  b1i <- rep(b1iU, each = Jt)　#重复测量的Y1的随机截距
+  eij <- rnorm(n * Jt, 0, sderror)　#重复测量的满足正态分布的Y１的测量误差
+  mij <- beta_0 + beta_1 * X1 + beta_2 * X2 + beta_t * tj + b0i + b1i * tj　　#纵向测量的真实值
+  Yij<- mij+eij #纵向测量观测值
+  #Yij <-stats::rnorm(length(mij), mij,sderror) #同上
+  #个体的累计风险函数
+  u <- runif(n) 　#产生n个0-1之间均匀分布值
+  K11 <- (beta_0 + beta_1 * X1U + beta_2 * X2U + b0iU)
+  K21 <- (beta_t + b1iU)                                                                              
+  K1_1 <- delta* exp(alpha * K11 +  gamma_11 * X1U + gamma_12 * X2U + gamma_0)
+  K1_2 <- delta* exp(alpha * K11 +  gamma_21 * X1U + gamma_22 * X2U + gamma_0)
+  K2 <- (alpha * K21)
+  da1 <- cbind(u, K1_1, K2)
+  da2 <- cbind(u, K1_2, K2)
+  #Cox模型的威布尔累积危险函数
+  cumhCox<-function (tt, u, K1, K2) 
+  {
+    if (K2 != 0) 
+      return(K1 * ((tt * exp(K2 * tt)/K2) - (exp(K2 * tt)/(K2^2)) + 
+                     (1/(K2^2))) + log(u))
+    else return(K1 * (tt^2)/2 + log(u))
+  }
+  #个体事件发生时间
+  #目标结局
+  fr1 <- function(da1) { 
+    if (cumhCox(500, u = da1[1], K1 = da1[2], K2 = da1[3]) <  0) #如果累计风险函数小于0
+      return(201)
+    else return(stats::uniroot(cumhCox, u = da1[1], K1 = da1[2], 
+                        K2 = da1[3], interval = c(0,500))$root) #在区间（0,500）中自下而上搜索一维根
+  }
+  #竞争结局
+  fr2 <- function(da2) { 
+    if (cumhCox(500, u = da2[1], K1 = da2[2], K2 = da2[3]) <  0) #如果累计风险函数小于0
+      return(201)
+    else return(stats::uniroot(cumhCox, u = da2[1], K1 = da2[2], 
+                               K2 = da2[3], interval = c(0,500))$root) #在区间（0,500）中自下而上搜索一维根
+  }
+  
+  eventtime1 <- apply(da1, 1, fr1)　#应用fr函数对da数据集中的行求解　得到个体的结局时间　
+  eventtime2<-apply(da2, 1, fr2)
+  #删失时间
+  library(lava)
+  m <- lvm()
+  distribution(m,"time")<- coxWeibull.lvm(scale=1/100,shape=2) #产生符合威布尔分布的值
+  censtime<-sim(m,n)[,1]  # 删失时间
+  fp<-rep(fptime,n) #随访时间 
+  event<-NULL #事件指示器，某事件发生在time,目标1，竞争2, 个体删失0
+  time<-NULL #事件发生的时间
+  #判断
+  for (i in 1:n) {
+    time[i] <- min(eventtime1[i],eventtime2[i],censtime[i],fp[i])
+    if (eventtime1[i]==time[i]){
+      event[i]= 1
+    } 
+    if (eventtime2[i]==time[i]){
+      event[i]= 2
+    }
+    if (censtime[i]==time[i]){
+      event[i]= 0
+    } 
+    if (fp[i]==time[i]){
+      event[i]= 0
+    } 
+  } 
+  #event11<-cbind(eventtime1,eventtime2,censtime,fptime,event) #
+  #数据集结构
+  dat <- as.data.frame(cbind(id = id, time = rep(time, each = Jt), tj, mij, Yij, event=rep(event, each = Jt),X1,X2))
+  dat <- dat[dat$time > dat$tj, ]
+  dat$id <- as.factor(dat$id)
+  dat$start <- dat$tj
+  splitid <- split(dat[c("start", "time")], dat$id)
+  dat$stop <- unlist(lapply(splitid, function (d) c(d$start[-1], d$time[1]) ))
+  dat$eventtd <-  with(dat, ave(event,dat$id,FUN = function (x) c(rep(0,length(x)-1), x[1])))
+  dat <- dat[ c("id", "time","event","eventtd", "tj", "X1", "X2", "mij", "Yij", "start","stop")]
+}
+
+###数据生成###
+simdata<-simjm(n = 10000,fptime=10)  #在10的随访时间下产生10000个个体样本 由于在函数内设置种子 故数据集唯一
